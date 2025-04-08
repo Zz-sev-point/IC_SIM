@@ -4,8 +4,9 @@
 #include <memory>
 #include <iomanip>
 #include <fstream>
+#include "dgraph_logger.h"
 
-constexpr uint32_t CROSSBAR_SIZE = 2048;
+constexpr uint32_t CROSSBAR_SIZE = 256;
 constexpr uint32_t ACC_SIZE = 512;
 constexpr uint32_t ACT_SIZE = 512;  
 constexpr uint32_t NUM_ACCURACY = 1;
@@ -51,33 +52,20 @@ public:
 class Interconnect {
 private:
     std::unordered_map<uint32_t, Component*> address_map;
+    DotGraphLogger logger;
 
 public:
-    std::ofstream dot_file;
+    Interconnect(const std::string& dotFileName)
+        : logger(dotFileName) {}
 
-    Interconnect() {
-        dot_file.open("network.dot", std::ios::trunc);
-        dot_file << "digraph Interconnect {\n";  // Start the DOT graph
-    }
-
-    Interconnect(std::string file) {
-        dot_file.open(file);
-        dot_file << "digraph Interconnect {\n";  // Start the DOT graph
-    }
-
-    ~Interconnect() {
-        dot_file << "}\n";  // Close the DOT graph at destruction
-        dot_file.close();
-    }
     void registerComponent(Component* component) {
         address_map[component->getAddress()] = component;
+        logger.addNode(component->getAddress(), component->getType());
     }
 
     void sendPacket(const Packet& packet) {
         if (address_map.find(packet.destination) != address_map.end()) {
-            dot_file << "  \"0x" << std::hex << packet.source << " " << address_map.find(packet.source)->second->getType()
-                    << "\" -> \"0x" << packet.destination << " " << address_map.find(packet.destination)->second->getType()
-                    << "\" [label=\"" << std::dec << packet.size_bits << " bits\"];\n";
+            logger.addEdge(packet.source, address_map.find(packet.source)->second->getType(), packet.destination, address_map.find(packet.destination)->second->getType(), packet.size_bits);
             address_map[packet.destination]->receive(packet);
         }
     }
@@ -231,7 +219,6 @@ class FullyConnectedLayer {
                 crossbars[i*crossbar_vol_num+j].send(base_address + (total_num + i * 2) * 0x1000, crossbar_size);
             }
             accumulators[i].send(base_address + (total_num + i * 2 + 1) * 0x1000, crossbar_size);
-            // activations[i].send(target_address + i * 0x1000, crossbar_size);
         }
 
         uint32_t i = 0;
@@ -437,10 +424,11 @@ class PoolingLayer {
 
 // Main Simulation
 int main() {
-    Interconnect interconnect;
+    std::string file_name = "network.dot";
+    Interconnect interconnect(file_name);
     Host host = Host(0x0000, 64*1024, &interconnect);
     interconnect.registerComponent(&host);
-    bool nn_flag = false;
+    bool nn_flag = true;
     if (nn_flag) {
         FullyConnectedLayer hidden_layer_0 = FullyConnectedLayer(784*NUM_ACCURACY, 512*NUM_ACCURACY, CROSSBAR_SIZE, 0x10000, &interconnect, "relu"); // 784*512
         FullyConnectedLayer hidden_layer_1 = FullyConnectedLayer(512*NUM_ACCURACY, 32*NUM_ACCURACY, CROSSBAR_SIZE, 0x40000, &interconnect, "relu"); // 512*32

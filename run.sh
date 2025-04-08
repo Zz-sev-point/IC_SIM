@@ -4,12 +4,15 @@
 SRC_FILE="interconnection.cpp"
 OUT_BIN="interconnection"
 
+# Additional source files
+EXTRA_SRC="dgraph_logger.cpp"
+
 # Default output image name
 PNG_NAME=${1:-network.png}  # Use first argument, or default to "network.png"
 
 # Compile the C++ code
 echo "[*] Compiling $SRC_FILE..."
-g++ -std=c++17 -o $OUT_BIN $SRC_FILE
+g++ -std=c++17 -o $OUT_BIN $SRC_FILE $EXTRA_SRC
 if [ $? -ne 0 ]; then
     echo "[!] Compilation failed!"
     exit 1
