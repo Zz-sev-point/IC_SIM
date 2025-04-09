@@ -8,7 +8,7 @@
 #include <chrono>
 #include "dgraph_logger.h"
 
-constexpr uint32_t CROSSBAR_SIZE = 1024;
+constexpr uint32_t CROSSBAR_SIZE = 256;
 constexpr uint32_t ACC_SIZE = CROSSBAR_SIZE;
 constexpr uint32_t ACT_SIZE = CROSSBAR_SIZE;  
 constexpr uint32_t NUM_ACCURACY = 1;
@@ -462,7 +462,7 @@ int main() {
     Interconnect interconnect(file_name);
     Host host = Host(64*1024*8, &interconnect);
     interconnect.registerComponent(&host);
-    bool nn_flag = false;
+    bool nn_flag = true;
     if (nn_flag) {
         FullyConnectedLayer hidden_layer_0 = FullyConnectedLayer(784*NUM_ACCURACY, 512*NUM_ACCURACY, CROSSBAR_SIZE, &interconnect, "relu"); // 784*512
         FullyConnectedLayer hidden_layer_1 = FullyConnectedLayer(512*NUM_ACCURACY, 32*NUM_ACCURACY, CROSSBAR_SIZE, &interconnect, "relu"); // 512*32

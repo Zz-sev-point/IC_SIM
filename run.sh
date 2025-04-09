@@ -29,6 +29,7 @@ if [ -f "network.dot" ]; then
     dot -Tpng network.dot -o "$PNG_NAME"
     END=$(date +%s.%N)
     ELAPSED=$(echo "$END - $START" | bc)
+    ELAPSED=$(printf "%.9f" "$ELAPSED")
     echo "Graph generation took $ELAPSED seconds" >> report.txt
     echo "[✓] network.png generated!"
 else
