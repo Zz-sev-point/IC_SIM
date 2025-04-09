@@ -54,7 +54,8 @@
         "iomanip": "cpp",
         "sstream": "cpp",
         "queue": "cpp",
-        "fstream": "cpp"
+        "fstream": "cpp",
+        "unordered_set": "cpp"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

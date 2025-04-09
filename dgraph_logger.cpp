@@ -27,15 +27,15 @@ void DotGraphLogger::addNode(uint32_t address, const std::string& type) {
 
 void DotGraphLogger::addEdge(uint32_t from, const std::string& fromType,
                              uint32_t to, const std::string& toType,
-                             uint32_t sizeBits) {
+                             uint32_t sizeBits, uint32_t times) {
     std::string fromNode = formatNode(from, fromType);
     std::string toNode = formatNode(to, toType);
 
-    addNode(from, fromType);
-    addNode(to, toType);
+    // addNode(from, fromType);
+    // addNode(to, toType);
 
     dotFile << "  \"" << fromNode << "\" -> \"" << toNode
-            << "\" [label=\"" << std::dec << sizeBits << " bits\"];\n";
+            << "\" [label=\"" << std::dec << times << "x " << std::dec << sizeBits << " bits\"];\n";
 }
 
 void DotGraphLogger::finalize() {

@@ -17,6 +17,6 @@ public:
     void addNode(uint32_t address, const std::string& type);
     void addEdge(uint32_t from, const std::string& fromType,
                  uint32_t to, const std::string& toType,
-                 uint32_t sizeBits);
+                 uint32_t sizeBits, uint32_t times);
     void finalize();
 };

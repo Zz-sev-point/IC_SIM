@@ -25,7 +25,11 @@ echo "[*] Running simulation..."
 # Generate PNG from DOT file
 if [ -f "network.dot" ]; then
     echo "[*] Generating PNG from DOT..."
+    START=$(date +%s.%N)
     dot -Tpng network.dot -o "$PNG_NAME"
+    END=$(date +%s.%N)
+    ELAPSED=$(echo "$END - $START" | bc)
+    echo "Graph generation took $ELAPSED seconds" >> report.txt
     echo "[✓] network.png generated!"
 else
     echo "[!] network.dot not found!"
