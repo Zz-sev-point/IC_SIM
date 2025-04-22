@@ -1,0 +1,3 @@
+
+bit precision: multiple addresses for the same crossbar as the input port
+stride padding
