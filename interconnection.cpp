@@ -8,7 +8,7 @@
 #include <chrono>
 #include "dgraph_logger.h"
 
-constexpr uint32_t CROSSBAR_SIZE = 256;
+constexpr uint32_t CROSSBAR_SIZE = 128;
 constexpr uint32_t ACC_SIZE = CROSSBAR_SIZE;
 constexpr uint32_t ACT_SIZE = CROSSBAR_SIZE;  
 constexpr uint32_t BIT_PRECISION = 1;
@@ -146,10 +146,10 @@ class CIMCrossbar: public Component {
     }
 
     void receive(Packet packet) override {
-        if (size_bits < packet.size_bits) {
-            std::cout << "Packet over size!" << std::endl;
-            exit(1);
-        }
+        // if (size_bits < packet.size_bits) {
+        //     std::cout << "Packet over size!" << std::endl;
+        //     exit(1);
+        // }
         std::cout << "[0x" << std::hex << address 
                   << "] Received data packet from 0x" << packet.source 
                   << " | Packet Size: " << std::dec << packet.size_bits 
@@ -303,6 +303,36 @@ class Im2col: public Component {
         }
     }
     std::string getType() { return "Im2col"; }
+};
+
+class Flatten: public Component {
+    private:
+    uint32_t total_bits = 0;
+    public:
+    Flatten(uint32_t size, Interconnect* ic): Component(size, ic) {}
+
+    void receive(Packets packets) override {
+        std::cout << "[0x" << std::hex << address 
+                  << "] Received data packet from 0x" << packets.source 
+                  << " | Packet Size: " << std::dec << packets.times << "x " << std::dec << packets.size_bits 
+                  << " bits. Processing...\n";
+        total_bits += packets.size_bits * packets.times;
+    }
+
+    void send(std::vector<uint32_t> addresses) {
+        for(auto &addr: addresses) {
+            if (size_bits < total_bits) {
+                Packets packets(address, addr, size_bits, 1);
+                interconnect->sendPackets(packets);
+                total_bits -= size_bits;
+            } else {
+                Packets packets(address, addr, total_bits, 1);
+                interconnect->sendPackets(packets);
+            }
+        }
+    }
+
+    std::string getType() { return "Flatten"; }
 };
 
 class Pool: public Component {
@@ -710,12 +740,14 @@ int main() {
         uint32_t input_sz_2[3] = {5, 5, 64};
         uint32_t kernel_sz_2[3] = {3, 3, 64};
         ConvolutionLayer hidden_layer_2 = ConvolutionLayer(input_sz_2, kernel_sz_2, CROSSBAR_SIZE, &interconnect, "relu");
-        uint32_t pool_input_sz_2[3] = {3, 3, 64};
-        uint32_t pool_kernel_sz_2[3] = {2, 2, 1};
-        PoolingLayer pooling_layer_2 = PoolingLayer(pool_input_sz_2, pool_kernel_sz_2, CROSSBAR_SIZE, &interconnect, "Max");
+        // uint32_t pool_input_sz_2[3] = {3, 3, 64};
+        // uint32_t pool_kernel_sz_2[3] = {2, 2, 1};
+        // PoolingLayer pooling_layer_2 = PoolingLayer(pool_input_sz_2, pool_kernel_sz_2, CROSSBAR_SIZE, &interconnect, "Max");
 
 
-        FullyConnectedLayer hidden_layer_3 = FullyConnectedLayer(64, 64, CROSSBAR_SIZE, &interconnect, "relu"); // 64*64
+        Flatten flatten(CROSSBAR_SIZE, &interconnect);
+        interconnect.registerComponent(&flatten);
+        FullyConnectedLayer hidden_layer_3 = FullyConnectedLayer(576, 64, CROSSBAR_SIZE, &interconnect, "relu"); // 576*64
         FullyConnectedLayer output_layer = FullyConnectedLayer(64, 10, CROSSBAR_SIZE, &interconnect, "relu"); // 64*10
 
         hidden_layer_0.set_up(&host, 28*28);
@@ -723,8 +755,9 @@ int main() {
         pooling_layer_0.forward_propagation(hidden_layer_1.get_input_addr()[0]);
         hidden_layer_1.forward_propagation(pooling_layer_1.get_input_addr());
         pooling_layer_1.forward_propagation(hidden_layer_2.get_input_addr()[0]);
-        hidden_layer_2.forward_propagation(pooling_layer_2.get_input_addr());
-        pooling_layer_2.forward_propagation(hidden_layer_3.get_input_addr());
+        hidden_layer_2.forward_propagation(flatten.getAddress());
+        flatten.send(hidden_layer_3.get_input_addr());
+        // pooling_layer_2.forward_propagation(hidden_layer_3.get_input_addr());
         hidden_layer_3.forward_propagation(output_layer.get_input_addr());
         output_layer.forward_propagation(host.getAddress());
 

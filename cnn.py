@@ -25,6 +25,8 @@ model = models.Sequential([
     layers.Dense(10, activation='softmax')
 ])
 
+model.summary()
+
 # Compile the model
 model.compile(optimizer='adam',
               loss='categorical_crossentropy',
