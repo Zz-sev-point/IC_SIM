@@ -8,10 +8,10 @@
 #include <chrono>
 #include "dgraph_logger.h"
 
-constexpr uint32_t CROSSBAR_SIZE = 512;
+constexpr uint32_t CROSSBAR_SIZE = 256;
 constexpr uint32_t ACC_SIZE = CROSSBAR_SIZE;
 constexpr uint32_t ACT_SIZE = CROSSBAR_SIZE;  
-constexpr uint32_t BIT_PRECISION = 1;
+constexpr uint32_t BIT_PRECISION = 2;
 
 struct Packet {
     uint32_t source;
@@ -215,7 +215,7 @@ class Accumulator: public Component {
         compute_bits = packets.size_bits;
     }
     void send(uint32_t dest) override {
-        Packets packets(address, dest, compute_bits, input_times);
+        Packets packets(address, dest, compute_bits/BIT_PRECISION, input_times);
         interconnect->sendPackets(packets);
         input_times = 0;
         compute_bits = 0;
@@ -270,11 +270,13 @@ class Im2col: public Component {
     private:
     uint32_t kernel_size[3];
     uint32_t input_size[3];
+    uint32_t stride;
+    uint32_t pad;
     std::vector<uint32_t> packets_sizes;
 
     public:
-    Im2col(uint32_t size, Interconnect* ic, uint32_t kernel_size[3], uint32_t input_size[3]) // size is crossbar size
-    : Component(size, ic) {
+    Im2col(uint32_t size, Interconnect* ic, uint32_t kernel_size[3], uint32_t input_size[3], uint32_t stride, uint32_t pad) // size is crossbar size
+    : Component(size, ic), stride(stride), pad(pad) {
         std::copy(input_size, input_size + 3, this->input_size);
         std::copy(kernel_size, kernel_size + 3, this->kernel_size);
         uint32_t output_bits = kernel_size[0] * kernel_size[1] * input_size[2];
@@ -294,7 +296,7 @@ class Im2col: public Component {
             std::cout << "Addresses error!" << std::endl;
             exit(1);
         }
-        uint32_t packet_num = (input_size[0] - kernel_size[0] + 1) * (input_size[1] - kernel_size[1] + 1);
+        uint32_t packet_num = (input_size[0] - kernel_size[0] + 1 + pad * 2) / stride * (input_size[1] - kernel_size[1] + 1 + pad * 2) / stride;
         uint32_t count = 0;
         for(auto &addr: addresses) {
             Packets packets(address, addr, packets_sizes[count], packet_num);
@@ -474,20 +476,20 @@ class FullyConnectedLayer: public NeuralNetworkLayer {
                 if (remain_vol_num > vol_num_p_crossbar) {
                     for (uint32_t j = 0; j < crossbar_vol_num; j++) {
                         if (remain_row_num > crossbar_size) {
-                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, crossbar_size, vol_num_p_crossbar));
+                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, crossbar_size, vol_num_p_crossbar * BIT_PRECISION));
                             remain_row_num -= crossbar_size;
                         } else {
-                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, remain_row_num, vol_num_p_crossbar));
+                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, remain_row_num, vol_num_p_crossbar * BIT_PRECISION));
                         }
                     }
                     remain_vol_num -= vol_num_p_crossbar;
                 } else {
                     for (uint32_t j = 0; j < crossbar_vol_num; j++) {
                         if (remain_row_num > crossbar_size) {
-                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, crossbar_size, remain_vol_num));
+                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, crossbar_size, remain_vol_num * BIT_PRECISION));
                             remain_row_num -= crossbar_size;
                         } else {
-                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, remain_row_num, remain_vol_num));
+                            crossbars.emplace_back(CIMCrossbar(crossbar_size, ic, remain_row_num, remain_vol_num * BIT_PRECISION));
                         }
                     }
                 }
@@ -540,15 +542,17 @@ class ConvolutionLayer: public NeuralNetworkLayer {
     private:
     uint32_t input_size[3]; // 0-height, 1-width, 2-channel
     uint32_t kernel_size[3]; // 0-height, 1-width, 2-channel
-    bool mapping_flag = false;
+    uint32_t stride;
+    uint32_t pad;
+    bool mapping_flag = true;
     Im2col _im2col;
     public:
-    ConvolutionLayer(uint32_t input_size[3], uint32_t kernel_size[3], uint32_t crossbar_size, Interconnect *ic, std::string type)
-        : NeuralNetworkLayer(crossbar_size, ic) , _im2col(crossbar_size, ic, kernel_size, input_size) {
+    ConvolutionLayer(uint32_t input_size[3], uint32_t kernel_size[3], uint32_t stride, uint32_t pad, uint32_t crossbar_size, Interconnect *ic, std::string type)
+        : NeuralNetworkLayer(crossbar_size, ic) , stride(stride), pad(pad), _im2col(crossbar_size, ic, kernel_size, input_size, stride, pad) {
             std::copy(input_size, input_size + 3, this->input_size);
             std::copy(kernel_size, kernel_size + 3, this->kernel_size);
-            uint32_t img_row_num = input_size[0]-kernel_size[0]+1;
-            uint32_t img_vol_num = input_size[1]-kernel_size[1]+1;
+            uint32_t img_row_num = input_size[0]-kernel_size[0]+1 + pad * 2;
+            uint32_t img_vol_num = input_size[1]-kernel_size[1]+1 + pad * 2;
             if (img_row_num < 1 || img_vol_num < 1) {
                 std::cout << "Illegal kernel size!" << std::endl;
                 exit(1);
@@ -558,7 +562,7 @@ class ConvolutionLayer: public NeuralNetworkLayer {
             uint32_t vol_num = 0;
             if (mapping_flag) {
                 row_num = input_size[0] * input_size[1] * input_size[2];
-                vol_num = img_row_num * img_vol_num * kernel_size[2];
+                vol_num = img_row_num / stride * img_vol_num / stride * kernel_size[2];
             } else {
                 row_num = kernel_size[0] * kernel_size[1] * input_size[2];
                 vol_num = kernel_size[2];
@@ -723,23 +727,25 @@ int main() {
         hidden_layer_1.forward_propagation(output_layer.get_input_addr());
         output_layer.forward_propagation(host.getAddress());
     } else {
+        uint32_t stride = 2;
+        uint32_t pad = 0;
         uint32_t input_sz_0[3] = {28, 28, 1};
         uint32_t kernel_sz_0[3] = {3, 3, 32};
-        ConvolutionLayer hidden_layer_0 = ConvolutionLayer(input_sz_0, kernel_sz_0, CROSSBAR_SIZE, &interconnect, "relu");
-        uint32_t pool_input_sz_0[3] = {26, 26, 32};
+        ConvolutionLayer hidden_layer_0 = ConvolutionLayer(input_sz_0, kernel_sz_0, stride, pad, CROSSBAR_SIZE, &interconnect, "relu");
+        uint32_t pool_input_sz_0[3] = {(26 + pad) / stride, (26 + pad) / stride, 32};
         uint32_t pool_kernel_sz_0[3] = {2, 2, 1};
         PoolingLayer pooling_layer_0 = PoolingLayer(pool_input_sz_0, pool_kernel_sz_0, CROSSBAR_SIZE, &interconnect, "Max");
 
         uint32_t input_sz_1[3] = {13, 13, 32};
         uint32_t kernel_sz_1[3] = {3, 3, 64};
-        ConvolutionLayer hidden_layer_1 = ConvolutionLayer(input_sz_1, kernel_sz_1, CROSSBAR_SIZE, &interconnect, "relu");
-        uint32_t pool_input_sz_1[3] = {11, 11, 64};
+        ConvolutionLayer hidden_layer_1 = ConvolutionLayer(input_sz_1, kernel_sz_1, stride, pad, CROSSBAR_SIZE, &interconnect, "relu");
+        uint32_t pool_input_sz_1[3] = {(11 + pad) / stride, (11 + pad) / stride, 64};
         uint32_t pool_kernel_sz_1[3] = {2, 2, 1};
         PoolingLayer pooling_layer_1 = PoolingLayer(pool_input_sz_1, pool_kernel_sz_1, CROSSBAR_SIZE, &interconnect, "Max");
 
         uint32_t input_sz_2[3] = {5, 5, 64};
         uint32_t kernel_sz_2[3] = {3, 3, 64};
-        ConvolutionLayer hidden_layer_2 = ConvolutionLayer(input_sz_2, kernel_sz_2, CROSSBAR_SIZE, &interconnect, "relu");
+        ConvolutionLayer hidden_layer_2 = ConvolutionLayer(input_sz_2, kernel_sz_2, stride, pad, CROSSBAR_SIZE, &interconnect, "relu");
         // uint32_t pool_input_sz_2[3] = {3, 3, 64};
         // uint32_t pool_kernel_sz_2[3] = {2, 2, 1};
         // PoolingLayer pooling_layer_2 = PoolingLayer(pool_input_sz_2, pool_kernel_sz_2, CROSSBAR_SIZE, &interconnect, "Max");
@@ -752,9 +758,9 @@ int main() {
 
         hidden_layer_0.set_up(&host, 28*28);
         hidden_layer_0.forward_propagation(pooling_layer_0.get_input_addr());
-        pooling_layer_0.forward_propagation(hidden_layer_1.get_input_addr()[0]);
+        pooling_layer_0.forward_propagation(hidden_layer_1.get_input_addr());
         hidden_layer_1.forward_propagation(pooling_layer_1.get_input_addr());
-        pooling_layer_1.forward_propagation(hidden_layer_2.get_input_addr()[0]);
+        pooling_layer_1.forward_propagation(hidden_layer_2.get_input_addr());
         hidden_layer_2.forward_propagation(flatten.getAddress());
         flatten.send(hidden_layer_3.get_input_addr());
         // pooling_layer_2.forward_propagation(hidden_layer_3.get_input_addr());

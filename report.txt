@@ -1,4 +1,4 @@
-Crossbar Size: 512*512
-Bit Precision: 1
-Sim Time Cost: 143e-6 s
-Graph generation took 0.067407013 seconds
+Crossbar Size: 256*256
+Bit Precision: 2
+Sim Time Cost: 404e-6 s
+Graph generation took 0.281643399 seconds
