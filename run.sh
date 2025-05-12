@@ -1,18 +1,20 @@
 #!/bin/bash
 
 # Name of the C++ file and output binary
-SRC_FILE="interconnection.cpp"
+SRC_FILE="main.cpp"
 OUT_BIN="interconnection"
 
 # Additional source files
-EXTRA_SRC="dgraph_logger.cpp"
+LOGGER="dgraph_logger.cpp"
+COMPONENT="components.cpp"
+LAYER="layers.cpp"
 
 # Default output image name
 PNG_NAME=${1:-network.png}  # Use first argument, or default to "network.png"
 
 # Compile the C++ code
 echo "[*] Compiling $SRC_FILE..."
-g++ -std=c++17 -o $OUT_BIN $SRC_FILE $EXTRA_SRC
+g++ -std=c++17 -o $OUT_BIN $SRC_FILE $LAYER $COMPONENT $LOGGER
 if [ $? -ne 0 ]; then
     echo "[!] Compilation failed!"
     exit 1

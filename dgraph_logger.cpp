@@ -1,4 +1,4 @@
-#include "dgraph_logger.h"
+#include "dgraph_logger.hpp"
 #include <sstream>
 #include <iomanip>
 
