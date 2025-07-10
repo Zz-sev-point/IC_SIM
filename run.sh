@@ -13,8 +13,8 @@ MODEL="./src/model.cpp"
 # Default output image name
 PNG_NAME=${1:-network.png}  # Use first argument, or default to "network.png"
 
-for bit in 2; do
-    for size in 256; do
+for bit in 1; do
+    for size in 2048; do
         # Compile the C++ code
         echo "[*] Compiling $SRC_FILE..."
         g++ -DCROSSBAR_SIZE=$size -DBIT_PRECISION=$bit -std=c++17 -o $OUT_BIN $SRC_FILE $MODEL $LAYER $COMPONENT $LOGGER

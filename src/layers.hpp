@@ -21,6 +21,8 @@ public:
 
     virtual uint32_t set_up(Component* component, uint32_t data_size);
 
+    virtual void set_bandwidth();
+
     virtual void forward_propagation(std::vector<uint32_t> target_addresses);
 
     virtual void forward_propagation(uint32_t target_address);
@@ -34,6 +36,8 @@ class FullyConnectedLayer: public NeuralNetworkLayer {
     uint32_t neural_num;
     public:
     FullyConnectedLayer(uint32_t input_size, uint32_t neural_num, uint32_t crossbar_size, Interconnect *ic, std::string type);
+
+    void set_bandwidth() override;
     
     void forward_propagation(std::vector<uint32_t> target_addresses) override;
 
@@ -46,7 +50,7 @@ class ConvolutionLayer: public NeuralNetworkLayer {
     uint32_t kernel_size[3]; // 0-height, 1-width, 2-channel
     uint32_t stride;
     uint32_t pad;
-    bool mapping_flag = false;
+    bool mapping_flag = true; // true: k2col; false: im2col
     Im2col _im2col;
     public:
     ConvolutionLayer(uint32_t input_size[3], uint32_t kernel_size[3], uint32_t stride, uint32_t pad, uint32_t crossbar_size, Interconnect *ic, std::string type);
@@ -54,6 +58,8 @@ class ConvolutionLayer: public NeuralNetworkLayer {
     std::vector<uint32_t> get_input_addr() override;
 
     uint32_t set_up(Component* component, uint32_t data_size) override;
+
+    void set_bandwidth() override;
     
     void forward_propagation(std::vector<uint32_t> target_addresses) override;
 

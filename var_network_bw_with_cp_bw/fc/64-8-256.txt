@@ -1,0 +1,10 @@
+Crossbar Size: 64*64
+Bit Precision: 8
+Crossbar Amount: 866
+Crossbar Usage Proportion: 0.942985
+Bandwidth: 256 bits per unit time
+Required Minimum Bandwidth: 64 bits per unit time
+Delay: 232 unit time
+Total Bits transferred: 853280 bits
+
+Sim Time Cost: 28650e-6 s

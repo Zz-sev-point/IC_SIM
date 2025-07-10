@@ -45,27 +45,72 @@ uint32_t Interconnect::registerComponent(Component* component) {
         crossbar_valid_area += crossbar->getValidArea(); 
     }
     return addr;
-    // logger.addNode(component->getAddress(), component->getType());
+}
+
+void Interconnect::setBandWidth(uint32_t src_addr, uint32_t dest_addr, uint32_t bw) {
+    if (address_map.find(src_addr) != address_map.end() && address_map.find(dest_addr) != address_map.end()) {
+        this->bandwidth_map[{src_addr, dest_addr}] = bw;
+        address_map[src_addr]->addOutPorts(1);
+        address_map[dest_addr]->addInPorts(1);
+    } else {
+        std::cout << "Cannot find the target component!" << std::endl;
+        exit(1);
+    }
+}
+
+uint32_t Interconnect::getBandWidth(uint32_t src_addr, uint32_t dest_addr) {
+    if (this->bandwidth_map.find({src_addr, dest_addr}) != this->bandwidth_map.end()) {
+        return this->bandwidth_map[{src_addr, dest_addr}];
+    } else {
+        return 0;
+    }
 }
 
 uint32_t Component::send(uint32_t dest) {
     Packet packet(address, dest, size_bits);
-    interconnect->sendPacket(packet);
-    return UNIT_TIME;
+    return interconnect->sendPacket(packet);
 }
 uint32_t Component::send(uint32_t dest, uint32_t size) {
     Packet packet(address, dest, size);
-    interconnect->sendPacket(packet);
-    return UNIT_TIME;
+    return interconnect->sendPacket(packet);
 }
 uint32_t Component::send(uint32_t dest, uint32_t size, uint32_t times) {
     Packets packets(address, dest, size, times);
-    interconnect->sendPackets(packets);
-    return times * UNIT_TIME;
+    return interconnect->sendPackets(packets);
 }
 
 uint32_t Component::getAddress() { return address; }
 uint32_t Component::getSize() { return size_bits; }
+
+uint32_t Component::getInPortBW() { 
+    if (in_port_num) {
+        return ceil_div(in_port_bw, in_port_num);
+    } else {
+        return in_port_bw; 
+    }
+}
+
+uint32_t Component::getOutPortBW() { 
+    if (out_port_num) {
+        return ceil_div(out_port_bw, out_port_num);
+    } else {
+        return out_port_bw; 
+    }
+}
+
+uint32_t Component::getInPortNum() { return in_port_num; }
+uint32_t Component::getOutPortNum(){ return out_port_num; }
+
+uint32_t Component::addInPorts(uint32_t port_num) {
+    in_port_num += port_num;
+    return in_port_num;
+}
+
+uint32_t Component::addOutPorts(uint32_t port_num) {
+    out_port_num += port_num;
+    return out_port_num;
+}
+
 std::string Component::getType() { return "Not defined!"; }
 
 // Interconnect model
@@ -74,24 +119,48 @@ Interconnect::Interconnect(const std::string& dotFileName)
 
 uint32_t Interconnect::registerComponent(Component* component);
 
-void Interconnect::sendPacket(const Packet& packet) {
+uint32_t Interconnect::sendPacket(const Packet& packet) {
     if (address_map.find(packet.destination) != address_map.end()) {
         if (address_map.find(packet.destination)->second->getType() != "Im2col" && min_bandwidth < packet.size_bits) {
             min_bandwidth = packet.size_bits;
         }
+
         total_bits_transferrd += static_cast<uint64_t>(packet.size_bits);
         logger.addEdge(packet.source, address_map.find(packet.source)->second->getType(), packet.destination, address_map.find(packet.destination)->second->getType(), packet.size_bits, 1);
         address_map[packet.destination]->receive(packet);
+
+        uint32_t component_bw = std::min(address_map[packet.source]->getOutPortBW(), address_map[packet.destination]->getInPortBW());
+        if (bandwidth_map.find({packet.source, packet.destination}) != bandwidth_map.end()) {
+            uint32_t bw = std::min(component_bw, bandwidth_map[{packet.source, packet.destination}]);
+            return ceil_div(packet.size_bits, bw) * UNIT_TIME;
+        } else {
+            return ceil_div(packet.size_bits, component_bw) * UNIT_TIME;
+        }
+    } else {
+        std::cout << "Cannot find the target component!" << std::endl;
+        exit(1);
     }
 }
-void Interconnect::sendPackets(const Packets& packets) {
+uint32_t Interconnect::sendPackets(const Packets& packets) {
     if (address_map.find(packets.destination) != address_map.end()) {
         if (address_map.find(packets.destination)->second->getType() != "Im2col" && min_bandwidth < packets.size_bits) {
             min_bandwidth = packets.size_bits;
         }
+
         total_bits_transferrd += static_cast<uint64_t>(packets.size_bits) * packets.times;
         logger.addEdge(packets.source, address_map.find(packets.source)->second->getType(), packets.destination, address_map.find(packets.destination)->second->getType(), packets.size_bits, packets.times);
         address_map[packets.destination]->receive(packets);
+
+        uint32_t component_bw = std::min(address_map[packets.source]->getOutPortBW(), address_map[packets.destination]->getInPortBW());
+        if (bandwidth_map.find({packets.source, packets.destination}) != bandwidth_map.end()) {
+            uint32_t bw = std::min(component_bw, bandwidth_map[{packets.source, packets.destination}]);
+            return ceil_div(packets.size_bits, bw) * packets.times * UNIT_TIME;
+        } else {
+            return ceil_div(packets.size_bits, component_bw) * packets.times * UNIT_TIME;
+        }
+    } else {
+        std::cout << "Cannot find the target component!" << std::endl;
+        exit(1);
     }
 }
 uint32_t Interconnect::getNextAddr() { return next_addr; }
@@ -107,6 +176,8 @@ CIMCrossbar::CIMCrossbar(uint32_t size, Interconnect* ic, uint32_t row_num, uint
     : Component(size, ic) {
         valid_volumes = vol_num;
         valid_rows = row_num;
+        in_port_bw = CB_IN_BW;
+        out_port_bw = CB_OUT_BW;
     }
 
 void CIMCrossbar::processData(uint32_t dataSize) {
@@ -141,11 +212,10 @@ void CIMCrossbar::receive(Packets packets) {
 }
 
 uint32_t CIMCrossbar::send(uint32_t dest) {
-    uint32_t delay = input_times;
     Packets packets(address, dest, valid_volumes, input_times);
-    interconnect->sendPackets(packets);
+    uint32_t delay = interconnect->sendPackets(packets);
     input_times = 0;
-    return delay * UNIT_TIME;
+    return delay;
 }
 
 std::string CIMCrossbar::getType() { return "Crossbar"; }
@@ -164,7 +234,10 @@ std::string Host::getType() { return "Host"; }
 
 // Accumulator
 Accumulator::Accumulator(uint32_t size, Interconnect* ic)
-    : Component(size, ic) {}
+    : Component(size, ic) {
+        in_port_bw = ACC_IN_BW;
+        out_port_bw = ACC_OUT_BW;
+    }
 
 void Accumulator::processData(uint32_t data_size, uint32_t data_times) {
     std::cout << "[0x" << std::hex << address 
@@ -186,12 +259,11 @@ void Accumulator::receive(Packets packets) {
 }
 
 uint32_t Accumulator::send(uint32_t dest) {
-    uint32_t delay = input_times;
     Packets packets(address, dest, compute_bits/BIT_PRECISION, input_times);
-    interconnect->sendPackets(packets);
+    uint32_t delay = interconnect->sendPackets(packets);
     input_times = 0;
     compute_bits = 0;
-    return delay * UNIT_TIME;
+    return delay;
 }
 
 std::string Accumulator::getType() { return "Accumulator"; }
@@ -200,7 +272,10 @@ uint32_t Accumulator::getTimes() { return input_times; }
 
 // Activation
 Activation::Activation(uint32_t size, Interconnect* ic, std::string activation_type)
-    : Component(size, ic), activation_type(activation_type) {}
+    : Component(size, ic), activation_type(activation_type) {
+        in_port_bw = ACT_IN_BW;
+        out_port_bw = ACT_OUT_BW;
+    }
 
 void Activation::processData(uint32_t dataSize) {
     std::cout << "[0x" << std::hex << address 
@@ -223,8 +298,7 @@ void Activation::receive(Packets packets) {
 
 uint32_t Activation::send(uint32_t dest) {
     Packets packets(address, dest, compute_bits, input_times);
-    interconnect->sendPackets(packets);
-    return input_times * UNIT_TIME;
+    return interconnect->sendPackets(packets);
 }
 std::string Activation::getType() { return "Activation"; }
 
@@ -233,6 +307,8 @@ uint32_t Activation::getTimes() { return input_times; }
 // Im2col
 Im2col::Im2col(uint32_t size, Interconnect* ic, uint32_t kernel_size[3], uint32_t input_size[3], uint32_t stride, uint32_t pad) // size is crossbar size
 : Component(size, ic), stride(stride), pad(pad) {
+    in_port_bw = IM_IN_BW;
+    out_port_bw = IM_OUT_BW;
     std::copy(input_size, input_size + 3, this->input_size);
     std::copy(kernel_size, kernel_size + 3, this->kernel_size);
     uint32_t output_bits = kernel_size[0] * kernel_size[1] * input_size[2];
@@ -254,17 +330,21 @@ uint32_t Im2col::send(std::vector<uint32_t> addresses) {
     }
     uint32_t packet_num = (input_size[0] - kernel_size[0] + 1 + pad * 2) / stride * (input_size[1] - kernel_size[1] + 1 + pad * 2) / stride * BIT_PRECISION;
     uint32_t count = 0;
+    uint32_t delay = 0;
     for(auto &addr: addresses) {
         Packets packets(address, addr, packets_sizes[count], packet_num);
-        interconnect->sendPackets(packets);
+        delay = interconnect->sendPackets(packets);
         count = (count+1) % packets_sizes.size();
     }
-    return packet_num * UNIT_TIME;
+    return delay;
 }
 std::string Im2col::getType() { return "Im2col"; }
 
 // Flatten
-Flatten::Flatten(uint32_t size, Interconnect* ic): Component(size, ic) {}
+Flatten::Flatten(uint32_t size, Interconnect* ic): Component(size, ic) {
+    in_port_bw = FLATTEN_IN_BW;
+    out_port_bw = FLATTEN_OUT_BW;
+}
 
 void Flatten::receive(Packets packets) {
     std::cout << "[0x" << std::hex << address 
@@ -275,24 +355,28 @@ void Flatten::receive(Packets packets) {
 }
 
 uint32_t Flatten::send(std::vector<uint32_t> addresses) {
+    uint32_t delay = 0;
     for(auto &addr: addresses) {
         if (size_bits * BIT_PRECISION < total_bits) {
             Packets packets(address, addr, size_bits, BIT_PRECISION);
-            interconnect->sendPackets(packets);
+            delay = interconnect->sendPackets(packets);
             total_bits -= size_bits * BIT_PRECISION;
         } else {
             Packets packets(address, addr, total_bits / BIT_PRECISION, BIT_PRECISION);
-            interconnect->sendPackets(packets);
+            delay = interconnect->sendPackets(packets);
         }
     }
-    return BIT_PRECISION * UNIT_TIME;
+    return delay;
 }
 
 std::string Flatten::getType() { return "Flatten"; }
 
 // Pool
 Pool::Pool(uint32_t size, Interconnect* ic, std::string pooling_type)
-    : Component(size, ic), type(pooling_type) {}
+    : Component(size, ic), type(pooling_type) {
+        in_port_bw = POOL_IN_BW;
+        out_port_bw = POOL_OUT_BW;  
+    }
 
 void Pool::processData(uint32_t dataSize) {
     std::cout << "[0x" << std::hex << address 
@@ -316,6 +400,8 @@ void Pool::receive(Packets packets) {
 }
 
 void Pool::pooling(uint32_t input_size[2], uint32_t kernel_size[1]) {
+    in_port_bw = POOL_IN_BW;
+    out_port_bw = POOL_OUT_BW;  
     uint32_t input_nums = input_bits / BIT_PRECISION;
     if (input_nums < input_size[0] * input_size[1] * input_size[2]) {
         std::cout << "Input size error!" << std::endl;
@@ -344,18 +430,18 @@ uint32_t Pool::send(std::vector<uint32_t> addresses) {
         exit(1);
     }
     uint32_t count = 0;
+    uint32_t delay = 0;
     for(auto &addr: addresses) {
         Packets packets(address, addr, packets_sizes[count], BIT_PRECISION);
-        interconnect->sendPackets(packets);
+        delay = interconnect->sendPackets(packets);
         count = (count + 1) % packets_sizes.size();
     }
-    return BIT_PRECISION * UNIT_TIME;
+    return delay;
 }
 
 uint32_t Pool::send(uint32_t dest) {
     Packets packets(address, dest, input_bits/BIT_PRECISION, BIT_PRECISION);
-    interconnect->sendPackets(packets);
-    return BIT_PRECISION * UNIT_TIME;
+    return interconnect->sendPackets(packets);
 }
 
 std::string Pool::getType() { return type + " Pooling"; }

@@ -1,7 +1,12 @@
 #pragma once
 #include <iostream>
 #include <unordered_map>
+#include <tuple>
 #include <algorithm>
+#include <utility>
+#include <functional>
+#include <cstdint>
+#include <limits>
 #include "dgraph_logger.hpp"
 #include "configuration.hpp"
 
@@ -24,6 +29,12 @@ struct Packets {
     Packets(uint32_t src, uint32_t dest, uint32_t size, uint32_t times);
 };
 
+struct pair_hash {
+    std::size_t operator()(const std::pair<uint32_t, uint32_t>& p) const {
+        return std::hash<uint32_t>{}(p.first) ^ (std::hash<uint32_t>{}(p.second) << 1);
+    }
+};
+
 class Interconnect;
 
 // Generic Component class
@@ -31,6 +42,10 @@ class Component {
 protected:
     uint32_t address;
     uint32_t size_bits; 
+    uint32_t in_port_bw = std::numeric_limits<uint32_t>::max();    // the default bandwidth is unlimited
+    uint32_t out_port_bw = std::numeric_limits<uint32_t>::max();   // the default bandwidth is unlimited
+    uint32_t in_port_num = 0;
+    uint32_t out_port_num = 0;
     Interconnect* interconnect;
     std::string type;
 
@@ -49,6 +64,12 @@ public:
 
     uint32_t getAddress();
     uint32_t getSize();
+    uint32_t getInPortBW();
+    uint32_t getOutPortBW();
+    uint32_t getInPortNum();
+    uint32_t getOutPortNum();
+    uint32_t addInPorts(uint32_t port_num); 
+    uint32_t addOutPorts(uint32_t port_num); 
     virtual std::string getType();
     virtual ~Component() {}
 };
@@ -57,6 +78,7 @@ public:
 class Interconnect {
 private:
     std::unordered_map<uint32_t, Component*> address_map;
+    std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, pair_hash>bandwidth_map;
     uint32_t next_addr = UNIT_ADDR;
     DotGraphLogger logger;
     uint32_t crossbar_num = 0;
@@ -68,9 +90,11 @@ public:
     Interconnect(const std::string& dotFileName);
 
     uint32_t registerComponent(Component* component);
+    void setBandWidth(uint32_t src_addr, uint32_t dest_addr, uint32_t bw);
+    uint32_t getBandWidth(uint32_t src_addr, uint32_t dest_addr);
 
-    void sendPacket(const Packet& packet);
-    void sendPackets(const Packets& packets);
+    uint32_t sendPacket(const Packet& packet);
+    uint32_t sendPackets(const Packets& packets);
     uint32_t getNextAddr();
     std::string getType();
     uint32_t getCrossbarNum();

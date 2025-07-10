@@ -22,17 +22,20 @@ std::vector<uint32_t> NeuralNetworkLayer::get_input_addr() {
 
 uint32_t NeuralNetworkLayer::set_up(Component* component, uint32_t data_size) {
     uint32_t left_data = data_size;
+    uint32_t delay = 0;
     for (auto& addr: get_input_addr()) {
         if (left_data > crossbar_size) {
-            component->send(addr, crossbar_size, BIT_PRECISION);
+            delay = component->send(addr, crossbar_size, BIT_PRECISION);
             left_data -= crossbar_size;
         } else {
-            component->send(addr, left_data, BIT_PRECISION);
+            delay = component->send(addr, left_data, BIT_PRECISION);
             left_data = data_size;
         }
     }
-    return BIT_PRECISION * UNIT_TIME;
+    return delay;
 }
+
+void NeuralNetworkLayer::set_bandwidth() {}
 
 void NeuralNetworkLayer::forward_propagation(std::vector<uint32_t> target_addresses) {}
 
@@ -76,9 +79,21 @@ FullyConnectedLayer::FullyConnectedLayer(uint32_t input_size, uint32_t neural_nu
             activations.emplace_back(Activation(ACT_SIZE, ic, type));
         }
         registerAll();
+        set_bandwidth();
     }
 
-void FullyConnectedLayer::forward_propagation(std::vector<uint32_t> target_addresses){
+void FullyConnectedLayer::set_bandwidth() {
+    uint32_t total_num = crossbar_row_num * crossbar_vol_num;
+
+    for (uint32_t i = 0; i < crossbar_row_num; i++) {
+        for (uint32_t j = 0; j < crossbar_vol_num; j++) {
+            ic->setBandWidth(crossbars[i*crossbar_vol_num+j].getAddress(), base_address + (total_num + i) * UNIT_ADDR, CB_ACC_BW);
+        }
+        ic->setBandWidth(accumulators[i].getAddress(), base_address + (total_num + crossbar_row_num + i) * UNIT_ADDR, ACC_ACT_BW);
+    }
+}
+
+void FullyConnectedLayer::forward_propagation(std::vector<uint32_t> target_addresses) {
     uint32_t total_num = crossbar_row_num * crossbar_vol_num;
 
     uint32_t crossbar_times = 0;
@@ -103,6 +118,11 @@ void FullyConnectedLayer::forward_propagation(std::vector<uint32_t> target_addre
     uint32_t addr_amount = target_addresses.size();
     if (act_amount <= addr_amount) {
         for (auto &addr: target_addresses) {
+            ic->setBandWidth(activations[i%act_amount].getAddress(), addr, LAYER_BW);
+            i++;
+        }
+        i = 0;
+        for (auto &addr: target_addresses) {
             uint32_t act_t = activations[i%act_amount].send(addr);
             if (act_times < act_t) {
                 act_times = act_t;
@@ -110,6 +130,11 @@ void FullyConnectedLayer::forward_propagation(std::vector<uint32_t> target_addre
             i++;
         }
     } else {
+        for(auto &act: activations) {
+            ic->setBandWidth(act.getAddress(), target_addresses[i%addr_amount], LAYER_BW);
+            i++;
+        }
+        i = 0;
         for(auto &act: activations) {
             uint32_t act_t = act.send(target_addresses[i%addr_amount]);
             if (act_times < act_t) {
@@ -201,6 +226,7 @@ ConvolutionLayer::ConvolutionLayer(uint32_t input_size[3], uint32_t kernel_size[
     }
     registerAll();
     if (!mapping_flag) { ic->registerComponent(&_im2col); }
+    set_bandwidth();
 }
 
 std::vector<uint32_t> ConvolutionLayer::get_input_addr() {
@@ -215,7 +241,25 @@ uint32_t ConvolutionLayer::set_up(Component* component, uint32_t data_size) {
     if (mapping_flag) {
         return NeuralNetworkLayer::set_up(component, data_size);
     } else {
-        return component->send(this->get_input_addr()[0], data_size) * UNIT_TIME;
+        return component->send(this->get_input_addr()[0], data_size);
+    }
+}
+
+void ConvolutionLayer::set_bandwidth() {
+    uint32_t total_num = crossbar_row_num * crossbar_vol_num;
+    
+    if (!mapping_flag) {
+        for (uint32_t i = 0; i < crossbar_row_num; i++) {
+            for (uint32_t j = 0; j < crossbar_vol_num; j++) {
+                ic->setBandWidth(_im2col.getAddress(), crossbars[i*crossbar_vol_num+j].getAddress(), IM_CB_BW);
+            }
+        }
+    }
+    for (uint32_t i = 0; i < crossbar_row_num; i++) {
+        for (uint32_t j = 0; j < crossbar_vol_num; j++) {
+            ic->setBandWidth(crossbars[i*crossbar_vol_num+j].getAddress(), base_address + (total_num + i) * UNIT_ADDR, CB_ACC_BW);
+        }
+        ic->setBandWidth(accumulators[i].getAddress(), base_address + (total_num + crossbar_row_num + i) * UNIT_ADDR, ACC_ACT_BW);
     }
 }
 
@@ -253,6 +297,11 @@ void ConvolutionLayer::forward_propagation(std::vector<uint32_t> target_addresse
     uint32_t addr_amount = target_addresses.size();
     if (act_amount <= addr_amount) {
         for (auto &addr: target_addresses) {
+            ic->setBandWidth(activations[i%act_amount].getAddress(), addr, LAYER_BW);
+            i++;
+        }
+        i = 0;
+        for (auto &addr: target_addresses) {
             uint32_t act_t = activations[i%act_amount].send(addr);
             if (act_times < act_t) {
                 act_times = act_t;
@@ -260,6 +309,11 @@ void ConvolutionLayer::forward_propagation(std::vector<uint32_t> target_addresse
             i++;
         }
     } else {
+        for(auto &act: activations) {
+            ic->setBandWidth(act.getAddress(), target_addresses[i%addr_amount], LAYER_BW);
+            i++;
+        }
+        i = 0;
         for(auto &act: activations) {
             uint32_t act_t = act.send(target_addresses[i%addr_amount]);
             if (act_times < act_t) {
@@ -321,8 +375,12 @@ std::vector<uint32_t> PoolingLayer::get_input_addr() {
 void PoolingLayer::forward_propagation(std::vector<uint32_t> target_addresses) {
     _pool.pooling(input_size, kernel_size);
     if (target_addresses.size() > 1) {
+        for (auto &addr: target_addresses) {
+            ic->setBandWidth(_pool.getAddress(), addr, LAYER_BW);
+        }
         this->times += _pool.send(target_addresses);
     } else {
+        ic->setBandWidth(_pool.getAddress(), target_addresses[0], LAYER_BW);
         this->times += _pool.send(target_addresses[0]);
     }
 }
@@ -338,10 +396,12 @@ FlattenLayer::FlattenLayer(uint32_t crossbar_size, Interconnect *ic)
 }
 
 std::vector<uint32_t> FlattenLayer::get_input_addr() {
-    // return _flatten.getAddress();
     return std::vector<uint32_t>(1, _flatten.getAddress());
 }
 
 void FlattenLayer::forward_propagation(std::vector<uint32_t> target_addresses) {
+    for (auto &addr: target_addresses) {
+        ic->setBandWidth(_flatten.getAddress(), addr, LAYER_BW);
+    }
     this->times += _flatten.send(target_addresses);
 }

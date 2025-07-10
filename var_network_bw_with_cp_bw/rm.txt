@@ -1,0 +1,15 @@
+NN:
+model.Conv(3, 3, 32)
+    .MaxPool(2, 2)
+    .Conv(3, 3, 64)
+    .MaxPool(2, 2)
+    .Conv(3, 3, 64)
+    .Flatten()
+    .Dense(64)
+    .Dense(10);
+
+crossbar size - bit precision
+64 - 1
+64 - 8
+128 - 1
+128 - 8

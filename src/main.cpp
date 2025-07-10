@@ -11,16 +11,18 @@ int main() {
     interconnect.registerComponent(&host);
     Model model({28, 28, 1}, CROSSBAR_SIZE, &host, &interconnect);
 
-    model.Conv(3, 3, 64)
-         .MaxPool(2, 2)
-         .Conv(3, 3, 64)
-         .Flatten()
-         .Dense(64)
-         .Dense(10);
+    // model.Conv(3, 3, 32)
+    //      .MaxPool(2, 2)
+    //      .Conv(3, 3, 64)
+    //      .MaxPool(2, 2)
+    //      .Conv(3, 3, 64)
+    //      .Flatten()
+    //      .Dense(64)
+    //      .Dense(10);
     
-    // model.Dense(512)
-    //     .Dense(64)
-    //     .Dense(10);
+    model.Dense(512)
+        .Dense(32)
+        .Dense(10);
 
     //model.Dense(128)
     //.Dense(10);
@@ -32,16 +34,18 @@ int main() {
 
     // Construct filename based on parameters
     std::stringstream filenameStream;
-    filenameStream << "./cnn-k2col/" << CROSSBAR_SIZE << "-" << BIT_PRECISION << ".txt";
+    // filenameStream << "./cnn-k2col/" << CROSSBAR_SIZE << "-" << BIT_PRECISION << ".txt";
+    filenameStream << "./var_network_bw_with_cp_bw/fc/" << CROSSBAR_SIZE << "-" << BIT_PRECISION << "-" << BANDWIDTH << ".txt";
     std::string filename = filenameStream.str();
 
     std::ofstream dotFile;
-    // dotFile.open(filename);
-    dotFile.open("report.txt");
+    dotFile.open(filename);
+    // dotFile.open("report.txt");
     dotFile << "Crossbar Size: " << CROSSBAR_SIZE << "*" << CROSSBAR_SIZE << "\n"
     << "Bit Precision: " << BIT_PRECISION << "\n"
     << "Crossbar Amount: " << interconnect.getCrossbarNum() << "\n"
     << "Crossbar Usage Proportion: " << interconnect.getCrossbarUsage() << "\n"
+    << "Bandwidth: " << BANDWIDTH << " bits per unit time\n"
     << "Required Minimum Bandwidth: " << interconnect.getMinBandwidth() << " bits per unit time\n"
     << "Delay: " << model.get_delay() << " unit time\n"
     << "Total Bits transferred: " << interconnect.getTotalBits() << " bits\n\n"
