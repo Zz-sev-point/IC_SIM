@@ -51,10 +51,17 @@ def filter_lowest_delay_by_precision(data_entries):
         for entry in entries:
             bw_groups[entry['bandwidth']].append(entry)
 
-        # Keep only the lowest delay per bandwidth
+        # For each bandwidth, find minimal delay config with smallest crossbar
         for bw, bw_entries in bw_groups.items():
-            min_delay_entry = min(bw_entries, key=lambda x: x['delay'])
-            filtered_data[precision].append(min_delay_entry)
+            # Find minimum delay
+            min_delay = min(entry['delay'] for entry in bw_entries)
+            
+            # Filter entries with this delay
+            min_delay_entries = [e for e in bw_entries if e['delay'] == min_delay]
+            
+            # Among these, select the one with smallest crossbar
+            optimal_entry = min(min_delay_entries, key=lambda x: x['crossbar_size'])
+            filtered_data[precision].append(optimal_entry)
 
     return filtered_data
 
@@ -93,14 +100,14 @@ def plot_and_save(filtered_data):
         ax2.legend(loc='upper right')
 
         # Save the figure
-        output_filename = f'im2col_delay_ana/bandwidth_analysis_precision_{precision}.png'
+        output_filename = f'fc_delay_ana/bandwidth_analysis_precision_{precision}.png'
         plt.tight_layout()
         plt.savefig(output_filename, dpi=300)
         print(f"Saved: {output_filename}")
         plt.close()
 
 def main():
-    folder_path = "./var_network_bw_with_cp_bw/cnn-im2col/"  # Update this path
+    folder_path = "./var_network_bw_with_cp_bw/fc/"  # Update this path
     data_entries = []
 
     # Read all simulation files
