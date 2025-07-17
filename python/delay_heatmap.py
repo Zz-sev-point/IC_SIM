@@ -37,23 +37,6 @@ for file in files:
 # Step 3: Convert to DataFrame
 df = pd.DataFrame(data)
 
-# Create logarithmic versions of your data (optional but recommended for labeling)
-# df['log_Crossbar_Size'] = np.log10(df['Crossbar Size'])
-# df['log_Bandwidth'] = np.log10(df['Bandwidth'])
-
-# fig = px.scatter_3d(df, 
-#                     x='log_Crossbar_Size',  # Use logarithmic values
-#                     y='Bit Precision', 
-#                     z='log_Bandwidth',
-#                     color='Delay',
-#                     color_continuous_scale='Jet',
-#                     title="Delay Heatmap",
-#                     labels={
-#                         'log_Crossbar_Size': 'Crossbar Size (log)',
-#                         'log_Bandwidth': 'Bandwidth (log)'
-#                     })
-# fig.write_html("3d_plot.html")  # Open in browser and manually screenshot
-
 slice_val_1 = 1
 slice_mask_1 = (df['Bit Precision'] >= slice_val_1-0.5) & (df['Bit Precision'] <= slice_val_1+0.5)
 slice_df_1 = df[slice_mask_1]
@@ -106,20 +89,3 @@ plt.tight_layout(rect=[0, 0, 0.85, 1])
 cbar = fig.colorbar(axes[0].collections[0], ax=axes, location='right', pad=0.02)
 cbar.set_label('Delay (log scale)', rotation=270, labelpad=10)
 plt.savefig("enhanced_heatmaps_fc.png", dpi=300, bbox_inches='tight')
-
-
-# plt.figure(figsize=(8, 6))
-# sns.heatmap(
-#     heatmap_data_1, 
-#     annot=True,      # Show values in cells
-#     # fmt=".0f",       # Format as integers
-#     cmap="YlOrRd",   # Color map (yellow-orange-red)
-#     linewidths=0.5,  # Add grid lines
-#     cbar_kws={'label': 'Delay (unit time)'}
-# )
-# plt.title("Delay vs. Crossbar Size and Bandwidth (4 bits)")
-# plt.xlabel("Crossbar Size")
-# plt.ylabel("Bandwidth")
-# plt.tight_layout()
-# plt.savefig("delay_heatmap.png", dpi=300)  # Save as high-res image
-# plt.show()
